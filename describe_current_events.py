@@ -1,29 +1,43 @@
-import wikipediaapi
-import datetime
-
-# Create a Wikipedia object
-wikipedia = wikipediaapi.Wikipedia(
-    language="en", user_agent="MyCustomUserAgent/1.0 (myemail@example.com)"
-)
+import requests
+from bs4 import BeautifulSoup
 
 
-# Function to get Wikipedia page for a specific day
-def get_wikipedia_page_for_day(month, day):
-    page_title = f"{month} {day}"
-    page = wikipedia.page(page_title)
-    return page.text if page.exists() else "Page not found"
+def get_wikipedia_current_events(date_str):
+    """
+    Fetches and parses the Wikipedia Current Events portal for a specific date to extract the list of events.
+
+    Args:
+        date_str: A string representing the date in the format 'YYYY_MM_DD'.
+    Returns:
+        A list of events for the specified date.
+    """
+    # Construct the URL
+    url = f"https://en.wikipedia.org/wiki/Portal:Current_events/{date_str}"
+
+    # Fetch the HTML content
+    response = requests.get(url)
+    if response.status_code != 200:
+        return "Failed to retrieve data from Wikipedia."
+
+    # Parse the HTML content
+    soup = BeautifulSoup(response.content, "html.parser")
+    events_div = soup.find("div", {"id": f"{date_str.replace('_', ' ')}"})
+
+    if not events_div:
+        return "No events found for this date."
+
+    # Extract the events
+    events = []
+    for heading in events_div.find_all("p", recursive=False):
+        category = heading.get_text().strip()
+        for event in heading.find_next_sibling("ul").find_all("li", recursive=False):
+            event_text = event.get_text().strip()
+            events.append(f"{category}: {event_text}")
+
+    return events
 
 
-# Specify the date you're interested in
-date_of_interest = (
-    datetime.date.today()
-)  # or use a specific date like datetime.date(2024, 1, 8)
-month = date_of_interest.strftime("%B")
-day = date_of_interest.day
-
-# Get the article
-article_text = get_wikipedia_page_for_day(month, day)
-
-# Save the article to a file
-with open(f"Wikipedia_Article_{month}_{day}.txt", "w", encoding="utf-8") as file:
-    file.write(article_text)
+# Example usage
+date_str = "2024_January_9"  # Format: YYYY_MonthName_DD
+events = get_wikipedia_current_events(date_str)
+print(events)
