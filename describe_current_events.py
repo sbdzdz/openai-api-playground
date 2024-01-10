@@ -1,18 +1,23 @@
 import requests
 from bs4 import BeautifulSoup
+from argparse import ArgumentParser
+from datetime import datetime
 
 
 def get_wikipedia_current_events(date_str):
     """
-    Fetches and parses the Wikipedia Current Events portal for a specific date to extract the list of events.
+    Fetch and parse the list of world events from Wikipedia for the specified date.
 
     Args:
-        date_str: A string representing the date in the format 'YYYY_MM_DD'.
+        date_str: A string representing the date in the format 'YYYY_Month_D'.
     Returns:
         A list of events for the specified date.
     """
     # Construct the URL
-    url = f"https://en.wikipedia.org/wiki/Portal:Current_events/{date_str}"
+    year, month, _ = date_str.split("_")
+    url = (
+        f"https://en.wikipedia.org/wiki/Portal:Current_events/{month}_{year}#{date_str}"
+    )
 
     # Fetch the HTML content
     response = requests.get(url)
@@ -21,23 +26,55 @@ def get_wikipedia_current_events(date_str):
 
     # Parse the HTML content
     soup = BeautifulSoup(response.content, "html.parser")
-    events_div = soup.find("div", {"id": f"{date_str.replace('_', ' ')}"})
+    events_div = soup.find("div", {"id": date_str})
 
     if not events_div:
         return "No events found for this date."
 
-    # Extract the events
-    events = []
-    for heading in events_div.find_all("p", recursive=False):
-        category = heading.get_text().strip()
-        for event in heading.find_next_sibling("ul").find_all("li", recursive=False):
-            event_text = event.get_text().strip()
-            events.append(f"{category}: {event_text}")
-
-    return events
+    ul_tags = events_div.find_all("ul")
+    for ul_tag in ul_tags:
+        li_tags = ul_tag.find_all("li", recursive=False)
+        for li_tag in li_tags:
+            process_li_tag(li_tag)
 
 
-# Example usage
-date_str = "2024_January_9"  # Format: YYYY_MonthName_DD
-events = get_wikipedia_current_events(date_str)
-print(events)
+def process_li_tag(li_tag):
+    """Output the text of the tag if it's a leaf node and contains more than a single link.
+    Args:
+        li_tag: A list item tag.
+    Returns:
+        None.
+    """
+    if li_tag.find("li"):
+        return
+    if len(li_tag.contents) == 1 and li_tag.find("a", recursive=False):
+        return
+    # Remove the reporting agency info
+    for a_tag in li_tag.find_all("a", recursive=False):
+        tag_class = a_tag.get("class", [])
+        if "external" in tag_class and "text" in tag_class:
+            a_tag.decompose()
+    event_text = li_tag.get_text(separator=" ", strip=True)
+    print(fix_formatting(event_text))
+
+
+def fix_formatting(event_text):
+    """Fix some formatting issues in the event text."""
+    event_text = event_text.replace(" ,", ",")
+    event_text = event_text.replace(" .", ".")
+    event_text = event_text.replace(" :", ":")
+    event_text = event_text.replace(" ;", ";")
+    event_text = event_text.replace(" )", ")")
+    event_text = event_text.replace("( ", "(")
+    return event_text
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--date",
+        help="Date in the format YYYY_Month_D",
+        default=datetime.now().strftime("%Y_%B_%d"),
+    )
+    args = parser.parse_args()
+    get_wikipedia_current_events(args.date)
